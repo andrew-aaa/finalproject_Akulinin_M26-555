@@ -1,11 +1,18 @@
 """Основные модели платформы"""
 
 import hashlib
-import hmac
 import os
-from datetime import datetime
-from numbers import Real
-from typing import Any
+from datetime import UTC, datetime
+
+EXCHANGE_RATES = {
+    "USD": 1.0,
+    "EUR": 1.08,
+    "GBP": 1.27,
+    "JPY": 0.0067,
+    "RUB": 0.01016,
+    "BTC": 59337.21,
+    "ETH": 3720.00,
+}
 
 
 class User:
@@ -15,13 +22,13 @@ class User:
         self,
         user_id: int,
         username: str,
-        hased_password: str,
+        hashed_password: str,
         salt: str,
-        registration_date: datetime         
+        registration_date: datetime,
     ) -> None:
         self.user_id = user_id
         self.username = username
-        self._hased_password = hased_password
+        self._hashed_password = hashed_password
         self._salt = salt
         self.registration_date = registration_date
 
@@ -90,9 +97,9 @@ class User:
         self._validate_datetime(value)
         self._registration_date = value
 
-    def get_user_info(self) -> dict[str, Any]:
-        """Возвращает информацию о пользователе без пароля и соли"""
-        
+    def get_user_info(self) -> dict:
+        """Возвращает информацию о пользователе"""
+
         return {
             "user_id": self.user_id,
             "username": self.username,
@@ -100,28 +107,29 @@ class User:
         }
 
     def change_password(self, new_password: str) -> None:
-        """Изменяет пароль, сохраняя только его односторонний хеш"""
+        """Изменяет пароль пользователя"""
 
         self._validate_password(new_password)
         self._hashed_password = self._hash_password(new_password, self.salt)
 
     def verify_password(self, password: str) -> bool:
-        """Проверяет пароль пользователя."""
+        """Проверяет введённый пароль"""
 
         if not isinstance(password, str):
             return False
 
         password_hash = self._hash_password(password, self.salt)
-        return hmac.compare_digest(password_hash, self.hashed_password)
-
-    def __repr__(self) -> str:
-        return f"User(user_id={self.user_id!r}, username={self.username!r})"
+        return password_hash == self.hashed_password
 
 
 class Wallet:
     """Кошелёк пользователя для одной валюты"""
 
-    def __init__(self, currency_code: str, balance: float = 0.0) -> None:
+    def __init__(
+        self,
+        currency_code: str,
+        balance: float = 0.0,
+    ) -> None:
         self.currency_code = currency_code
         self.balance = balance
 
@@ -129,15 +137,17 @@ class Wallet:
     def _validate_currency_code(value: str) -> None:
         if not isinstance(value, str):
             raise TypeError("Код валюты должен быть строкой")
+
         if not value.strip():
             raise ValueError("Код валюты не может быть пустым")
 
     @staticmethod
-    def _validate_amount(value: float, field_name: str = "amount") -> None:
-        if isinstance(value, bool) or not isinstance(value, Real):
-            raise TypeError(f"{field_name} должен быть числом")
+    def _validate_amount(value: float) -> None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("amount должен быть числом")
+
         if value <= 0:
-            raise ValueError(f"{field_name} должен быть положительным")
+            raise ValueError("amount должен быть положительным")
 
     @property
     def currency_code(self) -> str:
@@ -154,84 +164,64 @@ class Wallet:
 
     @balance.setter
     def balance(self, value: float) -> None:
-        if isinstance(value, bool) or not isinstance(value, Real):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("balance должен быть числом")
+
         if value < 0:
             raise ValueError("Баланс не может быть отрицательным")
 
         self._balance = float(value)
 
     def deposit(self, amount: float) -> None:
-        """Пополняет кошелёк на указанную положительную сумму"""
+        """Пополняет кошелёк"""
 
         self._validate_amount(amount)
         self.balance += float(amount)
 
     def withdraw(self, amount: float) -> None:
-        """Снимает сумму, если на кошельке достаточно средств"""
-    
+        """Снимает средства с кошелька"""
+
         self._validate_amount(amount)
+
         if amount > self.balance:
             raise ValueError("Недостаточно средств на кошельке")
 
         self.balance -= float(amount)
 
-    def get_balance_info(self) -> dict[str, float | str]:
-        """Возвращает код валюты и текущий баланс"""
+    def get_balance_info(self) -> dict:
+        """Возвращает информацию о балансе"""
 
         return {
             "currency_code": self.currency_code,
             "balance": self.balance,
         }
 
-    def __repr__(self) -> str:
-        return f"Wallet(currency_code={self.currency_code!r}, balance={self.balance!r})"
-
 
 class Portfolio:
-    """Портфель пользователя, содержащий кошельки разных валют."""
-
-    exchange_rates: dict[str, float] = {
-        "USD": 1.0,
-        "EUR": 1.08,
-        "GBP": 1.27,
-        "RUB": 0.011,
-        "BTC": 60000.0,
-        "ETH": 2500.0,
-    }
+    """Портфель пользователя, содержащий кошельки разных валют"""
 
     def __init__(
         self,
-        user_id: int | User,
+        user: User | int,
         wallets: dict[str, Wallet] | None = None,
     ) -> None:
-        self._user: User | None = user_id if isinstance(user_id, User) else None
-        self._user_id = user_id.user_id if isinstance(user_id, User) else self._validate_user_id(user_id)
+        if isinstance(user, User):
+            self._user = user
+            self._user_id = user.user_id
+        elif isinstance(user, int):
+            self._user = None
+            self._user_id = user
+        else:
+            raise TypeError("Пользователь должен быть User или целым ID")
+
         self._wallets: dict[str, Wallet] = {}
 
         if wallets is not None:
-            if not isinstance(wallets, dict):
-                raise TypeError("wallets должен быть словарём")
-            for currency_code, wallet in wallets.items():
-                if not isinstance(wallet, Wallet):
-                    raise TypeError("Все значения wallets должны быть объектами Wallet")
-                if currency_code.upper() != wallet.currency_code:
-                    raise ValueError("Ключ кошелька должен совпадать с currency_code")
+            for wallet in wallets.values():
                 self._wallets[wallet.currency_code] = wallet
-
-    @staticmethod
-    def _validate_user_id(value: int) -> int:
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError("user_id должен быть целым числом")
-        if value <= 0:
-            raise ValueError("user_id должен быть положительным")
-
-        return value
 
     @property
     def user(self) -> User | None:
-        """Возвращает связанный объект User, если он был передан в конструктор"""
-
         return self._user
 
     @property
@@ -247,51 +237,56 @@ class Portfolio:
     def add_currency(self, currency_code: str) -> Wallet:
         """Добавляет кошелёк новой валюты"""
 
-        self._validate_currency_code(currency_code)
-        code = currency_code.strip().upper()
-        if code in self._wallets:
-            raise ValueError(f"Кошелёк {code} уже существует")
-
-        wallet = Wallet(code)
-        self._wallets[code] = wallet
-        return wallet
-
-    @staticmethod
-    def _validate_currency_code(value: str) -> None:
-        if not isinstance(value, str):
+        if not isinstance(currency_code, str):
             raise TypeError("Код валюты должен быть строкой")
-        if not value.strip():
+
+        currency_code = currency_code.strip().upper()
+
+        if not currency_code:
             raise ValueError("Код валюты не может быть пустым")
 
-    def get_wallet(self, currency_code: str) -> Wallet:
-        """Возвращает кошелёк по коду валюты"""
+        if currency_code in self._wallets:
+            return self._wallets[currency_code]
 
-        self._validate_currency_code(currency_code)
-        code = currency_code.strip().upper()
-        try:
-            return self._wallets[code]
-        except KeyError as exc:
-            raise KeyError(f"Кошелёк {code} не найден") from exc
+        wallet = Wallet(currency_code)
+        self._wallets[currency_code] = wallet
+
+        return wallet
 
     def get_total_value(self, base_currency: str = "USD") -> float:
-        """Возвращает стоимость портфеля в указанной базовой валюте"""
+        """Возвращает общую стоимость портфеля в базовой валюте"""
 
-        self._validate_currency_code(base_currency)
-        base = base_currency.strip().upper()
-        if base not in self.exchange_rates:
-            raise ValueError(f"Нет курса для валюты {base}")
+        base_currency = base_currency.strip().upper()
 
-        base_rate = self.exchange_rates[base]
+        if base_currency not in EXCHANGE_RATES:
+            raise ValueError(f"Неизвестная базовая валюта: {base_currency}")
+
         total = 0.0
+
         for wallet in self._wallets.values():
             currency = wallet.currency_code
-            if currency not in self.exchange_rates:
-                raise ValueError(f"Нет курса для валюты {currency}")
-            total += wallet.balance * self.exchange_rates[currency] / base_rate
-        return total
 
-    def __repr__(self) -> str:
-        return f"Portfolio(user_id={self.user_id!r}, wallets={self._wallets!r})"
+            if currency not in EXCHANGE_RATES:
+                raise ValueError(f"Нет курса для валюты: {currency}")
+
+            amount_in_usd = wallet.balance * EXCHANGE_RATES[currency]
+
+            total += amount_in_usd
+
+        if base_currency == "USD":
+            return total
+
+        return total / EXCHANGE_RATES[base_currency]
+
+    def get_wallet(self, currency_code: str) -> Wallet:
+        """Возвращает кошелёк указанной валюты"""
+
+        currency_code = currency_code.strip().upper()
+
+        if currency_code not in self._wallets:
+            raise KeyError(currency_code)
+
+        return self._wallets[currency_code]
 
 
 def create_user(
@@ -301,10 +296,12 @@ def create_user(
     registration_date: datetime | None = None,
     salt: str | None = None,
 ) -> User:
-    """Вспомогательная функция создания User из обычного пароля"""
+    """Создаёт пользователя"""
 
     User._validate_password(password)
+
     actual_salt = salt if salt is not None else os.urandom(16).hex()
+
     hashed_password = User._hash_password(password, actual_salt)
 
     return User(
@@ -312,5 +309,5 @@ def create_user(
         username=username,
         hashed_password=hashed_password,
         salt=actual_salt,
-        registration_date=registration_date or datetime.now(),
+        registration_date=registration_date or datetime.now(UTC),
     )

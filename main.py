@@ -1,4 +1,4 @@
-"""Точка входа приложения."""
+"""Точка входа приложения"""
 
 from valutatrade_hub.cli.interface import main
 
