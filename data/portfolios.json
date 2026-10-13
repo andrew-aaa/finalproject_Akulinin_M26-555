@@ -4,11 +4,11 @@
         "wallets": {
             "USD": {
                 "currency_code": "USD",
-                "balance": 1000.0
+                "balance": 992.44
             },
             "EUR": {
                 "currency_code": "EUR",
-                "balance": 0.0
+                "balance": 7.0
             }
         }
     },
@@ -17,11 +17,7 @@
         "wallets": {
             "USD": {
                 "currency_code": "USD",
-                "balance": 994.6
-            },
-            "EUR": {
-                "currency_code": "EUR",
-                "balance": 5.0
+                "balance": 0.0
             }
         }
     }

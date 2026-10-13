@@ -1,0 +1,10 @@
+{
+    "base_currency": "USD",
+    "users_file": "data/users.json",
+    "rates_file": "data/rates.json",
+    "portfolios_file": "data/portfolios.json",
+    "logs_dir": "logs",
+    "log_level": "INFO",
+    "log_format": "%(asctime)s - %(levelname)s - %(message)s",
+    "rate_cache_ttl": 300
+}

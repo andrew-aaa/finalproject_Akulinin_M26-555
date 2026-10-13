@@ -5,6 +5,12 @@ import shlex
 from prettytable import PrettyTable
 
 from valutatrade_hub.core import usecases
+from valutatrade_hub.core.exceptions import (
+    ApiRequestError,
+    CurrencyNotFoundError,
+    InsufficientFundsError,
+)
+from valutatrade_hub.logging_config import setup_logging
 
 HELP = """
 Доступные команды:
@@ -240,6 +246,8 @@ def execute(command: str, current_user=None):
 def main() -> None:
     """Запускает CLI"""
 
+    setup_logging()
+
     current_user = None
     print("ValutaTrade Hub. Введите 'help' для списка команд.")
 
@@ -255,9 +263,17 @@ def main() -> None:
                 break
 
             current_user = execute(command, current_user)
-
-        except (ValueError, TypeError, KeyError) as error:
-            print(f"Ошибка: {error}")
+        except CurrencyNotFoundError as e:
+            print(f"Ошибка: {e}. Проверьте код валюты и команду help")
+        except ApiRequestError as e:
+            print(f"Ошибка: {e}. Попробуйте повторить запрос позже")
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            InsufficientFundsError,
+        ) as e:
+            print(f"Ошибка: {e}")
         except KeyboardInterrupt:
             print("\nДо свидания!")
             break

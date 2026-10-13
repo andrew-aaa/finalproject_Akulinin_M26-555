@@ -1,0 +1,2 @@
+2026-10-12 22:44:35,089 - INFO - timestamp=2026-10-12T19:44:35.080+00:00 action=LOGIN username=test1 currency_code=unknown amount=unknown rate=unknown base=unknown result=OK
+2026-10-12 22:46:49,528 - INFO - timestamp=2026-10-12T19:46:49.525+00:00 action=BUY username=test1 currency_code=EUR amount=-1 rate=unknown base=unknown result=ERROR error_type=ValueError error_message='Сумма должна быть положительной' function=buy_currency

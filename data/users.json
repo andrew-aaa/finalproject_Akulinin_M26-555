@@ -1,16 +1,16 @@
 [
     {
         "user_id": 1,
-        "username": "test_user",
-        "hashed_password": "9f7230022324c0f433951c6b0efa0f320d1509c8ac3c018808ce08e41990325f",
-        "salt": "54643fde9295dcdc9354360116e9bd22",
-        "registration_date": "2026-10-08T16:16:38.599529+00:00"
+        "username": "test1",
+        "hashed_password": "985a706ef52a4d793c17afbbb598cc80ac35ec7a28fdd229354c05a2f154a222",
+        "salt": "8b91b765223c584333dfb57f5b13c912",
+        "registration_date": "2026-10-10T16:29:14.521088+00:00"
     },
     {
         "user_id": 2,
         "username": "test2",
-        "hashed_password": "37cff944cd5f957f9fe3fbb827f069393ae2873d3118bbb74d63f6632b161b92",
-        "salt": "ae785f3b1c1f0ef993ac97d7eeb043b8",
-        "registration_date": "2026-10-08T16:46:04.689590+00:00"
+        "hashed_password": "20cb08070ef87976a81b662eaef9e7349c52ee127d1cfb8530fab8748d02dedb",
+        "salt": "2dde54a0d7136a5f3f7a537031cfbf7e",
+        "registration_date": "2026-10-12T19:16:51.013224+00:00"
     }
 ]

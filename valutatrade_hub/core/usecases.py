@@ -4,6 +4,11 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.exceptions import (
+    ApiRequestError,
+    InsufficientFundsError,
+)
 from valutatrade_hub.core.models import (
     EXCHANGE_RATES,
     Portfolio,
@@ -12,18 +17,20 @@ from valutatrade_hub.core.models import (
     create_user,
 )
 from valutatrade_hub.core.utils import (
-    cache_with_ttl,
     datetime_to_str,
-    log_action,
     str_to_datetime,
 )
+from valutatrade_hub.decorators import log_action
+from valutatrade_hub.infra.database import DatabaseManager
+from valutatrade_hub.infra.settings import SettingsLoader
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = BASE_DIR / "data"
+db = DatabaseManager()
 
-USERS_FILE = DATA_DIR / "users.json"
-PORTFOLIOS_FILE = DATA_DIR / "portfolios.json"
-RATES_FILE = DATA_DIR / "rates.json"
+USERS_FILE = db.get_path("users_file")
+PORTFOLIOS_FILE = db.get_path("portfolios_file")
+RATES_FILE = db.get_path("rates_file")
+
+DATA_DIR = USERS_FILE.parent
 
 
 def _ensure_data_files() -> None:
@@ -40,25 +47,41 @@ def _ensure_data_files() -> None:
 
 
 def _read_json(file_path: Path) -> list | dict:
-    """Читает данные из JSON-файла"""
+    """Читает данные из JSON-файла через DatabaseManager"""
 
     _ensure_data_files()
 
+    if file_path == USERS_FILE:
+        key = "users_file"
+        default = []
+    elif file_path == PORTFOLIOS_FILE:
+        key = "portfolios_file"
+        default = []
+    elif file_path == RATES_FILE:
+        key = "rates_file"
+        default = {}
+    else:
+        raise ValueError(f"Неизвестный файл данных: {file_path}")
+
     try:
-        return json.loads(file_path.read_text(encoding="utf-8"))
+        return db.load_json(key, default)
     except json.JSONDecodeError:
-        if file_path in (USERS_FILE, PORTFOLIOS_FILE):
-            return []
-        return {}
+        return default
 
 
 def _write_json(file_path: Path, data: list | dict) -> None:
-    """Записывает данные в JSON-файл"""
+    """Записывает данные в JSON-файл через DatabaseManager"""
 
-    _ensure_data_files()
-    file_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-    )
+    if file_path == USERS_FILE:
+        key = "users_file"
+    elif file_path == PORTFOLIOS_FILE:
+        key = "portfolios_file"
+    elif file_path == RATES_FILE:
+        key = "rates_file"
+    else:
+        raise ValueError(f"Неизвестный файл данных: {file_path}")
+
+    db.save_json(key, data)
 
 
 def _normalize_currency(currency_code: str) -> str:
@@ -167,6 +190,7 @@ def _find_user_by_username(username: str) -> User | None:
     return None
 
 
+@log_action("REGISTER")
 def register_user(username: str, password: str) -> User:
     """Регистрирует нового пользователя"""
 
@@ -202,6 +226,7 @@ def register_user(username: str, password: str) -> User:
     return user
 
 
+@log_action("LOGIN")
 def login_user(username: str, password: str) -> User:
     """Проверяет логин и пароль пользователя"""
 
@@ -249,10 +274,9 @@ def save_portfolio(portfolio: Portfolio) -> None:
 
 
 def _get_cached_rate(base_currency: str, quote_currency: str) -> float | None:
-    """Возвращает свежий курс из кеша"""
+    """Возвращает курс из кеша, если он ещё не устарел"""
 
     rates_data = _read_json(RATES_FILE)
-
     key = f"{base_currency}_{quote_currency}"
     rate_data = rates_data.get(key)
 
@@ -261,13 +285,16 @@ def _get_cached_rate(base_currency: str, quote_currency: str) -> float | None:
 
     try:
         updated_at = str_to_datetime(rate_data["updated_at"])
-    except (KeyError, ValueError):
+        rate = float(rate_data["rate"])
+    except (KeyError, TypeError, ValueError):
         return None
 
-    if datetime.now(UTC) - updated_at > timedelta(minutes=5):
+    ttl = SettingsLoader().get("rate_cache_ttl", 300)
+
+    if datetime.now(UTC) - updated_at > timedelta(seconds=ttl):
         return None
 
-    return float(rate_data["rate"])
+    return rate
 
 
 def _save_rate(base_currency: str, quote_currency: str, rate: float) -> None:
@@ -285,13 +312,15 @@ def _save_rate(base_currency: str, quote_currency: str, rate: float) -> None:
     _write_json(RATES_FILE, rates_data)
 
 
-@cache_with_ttl(300)
-@log_action
+@log_action("get_rate")
 def get_rate(base_currency: str, quote_currency: str) -> tuple[float, datetime]:
-    """Возвращает курс валют"""
+    """Возвращает курс валют и время его обновления"""
 
     base_currency = _normalize_currency(base_currency)
     quote_currency = _normalize_currency(quote_currency)
+
+    get_currency(base_currency)
+    get_currency(quote_currency)
 
     if base_currency == quote_currency:
         return 1.0, datetime.now(UTC)
@@ -301,18 +330,17 @@ def get_rate(base_currency: str, quote_currency: str) -> tuple[float, datetime]:
     if cached_rate is not None:
         rates_data = _read_json(RATES_FILE)
         key = f"{base_currency}_{quote_currency}"
-
         updated_at = str_to_datetime(rates_data[key]["updated_at"])
-
         return cached_rate, updated_at
 
     if base_currency in EXCHANGE_RATES and quote_currency in EXCHANGE_RATES:
         rate = EXCHANGE_RATES[base_currency] / EXCHANGE_RATES[quote_currency]
     else:
-        raise ValueError(f"Курс для пары {base_currency}/{quote_currency} недоступен")
+        raise ApiRequestError(
+            f"Курс для пары {base_currency}/{quote_currency} недоступен"
+        )
 
     timestamp = datetime.now(UTC)
-
     _save_rate(base_currency, quote_currency, rate)
 
     return rate, timestamp
@@ -338,7 +366,7 @@ def show_portfolio(user: User, base_currency: str = "USD") -> dict:
             }
         )
 
-    total_value = portfolio.get_total_value(base_currency)
+    total_value = sum(wallet["value"] for wallet in wallets)
 
     return {
         "username": user.username,
@@ -348,11 +376,14 @@ def show_portfolio(user: User, base_currency: str = "USD") -> dict:
     }
 
 
+@log_action("BUY", verbose=True)
 def buy_currency(user: User, currency_code: str, amount: float) -> dict:
     """Покупает валюту за USD"""
 
     currency_code = _normalize_currency(currency_code)
     amount = _validate_amount(amount)
+
+    get_currency(currency_code)
 
     if currency_code == "USD":
         raise ValueError("Нельзя покупать USD за USD")
@@ -364,9 +395,12 @@ def buy_currency(user: User, currency_code: str, amount: float) -> dict:
     cost = amount * rate
 
     if cost > usd_wallet.balance:
-        raise ValueError("Недостаточно USD для покупки")
+        raise InsufficientFundsError(
+            available=usd_wallet.balance, required=cost, code="USD"
+        )
 
     target_wallet = portfolio.add_currency(currency_code)
+    balance_before = target_wallet.balance
 
     usd_wallet.withdraw(cost)
     target_wallet.deposit(amount)
@@ -378,14 +412,19 @@ def buy_currency(user: User, currency_code: str, amount: float) -> dict:
         "amount": amount,
         "rate": rate,
         "cost_usd": cost,
+        "balance_before": balance_before,
+        "balance_after": target_wallet.balance,
     }
 
 
+@log_action("SELL", verbose=True)
 def sell_currency(user: User, currency_code: str, amount: float) -> dict:
     """Продаёт валюту и получает USD"""
 
     currency_code = _normalize_currency(currency_code)
     amount = _validate_amount(amount)
+
+    get_currency(currency_code)
 
     if currency_code == "USD":
         raise ValueError("Нельзя продавать USD за USD")
@@ -398,6 +437,7 @@ def sell_currency(user: User, currency_code: str, amount: float) -> dict:
         raise ValueError(f"Кошелёк {currency_code} отсутствует в портфеле")
 
     rate, _ = get_rate(currency_code, "USD")
+    balance_before = wallet.balance
 
     usd_amount = amount * rate
 
@@ -413,4 +453,6 @@ def sell_currency(user: User, currency_code: str, amount: float) -> dict:
         "amount": amount,
         "rate": rate,
         "received_usd": usd_amount,
+        "balance_before": balance_before,
+        "balance_after": wallet.balance,
     }

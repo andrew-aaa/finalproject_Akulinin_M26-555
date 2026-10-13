@@ -4,6 +4,8 @@ import hashlib
 import os
 from datetime import UTC, datetime
 
+from valutatrade_hub.core.exceptions import InsufficientFundsError
+
 EXCHANGE_RATES = {
     "USD": 1.0,
     "EUR": 1.08,
@@ -184,7 +186,9 @@ class Wallet:
         self._validate_amount(amount)
 
         if amount > self.balance:
-            raise ValueError("Недостаточно средств на кошельке")
+            raise InsufficientFundsError(
+                available=self.balance, required=amount, code=self.currency_code
+            )
 
         self.balance -= float(amount)
 
