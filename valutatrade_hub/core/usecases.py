@@ -277,10 +277,18 @@ def _get_cached_rate(base_currency: str, quote_currency: str) -> float | None:
     """Возвращает курс из кеша, если он ещё не устарел"""
 
     rates_data = _read_json(RATES_FILE)
-    key = f"{base_currency}_{quote_currency}"
-    rate_data = rates_data.get(key)
 
-    if rate_data is None:
+    if not isinstance(rates_data, dict):
+        return None
+
+    pairs = rates_data.get("pairs", rates_data)
+    if not isinstance(pairs, dict):
+        return None
+
+    key = f"{base_currency}_{quote_currency}"
+    rate_data = pairs.get(key)
+
+    if not isinstance(rates_data, dict):
         return None
 
     try:
@@ -301,13 +309,17 @@ def _save_rate(base_currency: str, quote_currency: str, rate: float) -> None:
     """Сохраняет курс в кеш"""
 
     rates_data = _read_json(RATES_FILE)
-
     key = f"{base_currency}_{quote_currency}"
 
-    rates_data[key] = {
+    rate_data = {
         "rate": rate,
         "updated_at": datetime_to_str(datetime.now(UTC)),
     }
+
+    if "pairs" in rates_data and isinstance(rates_data["pairs"], dict):
+        rates_data["pairs"][key] = rate_data
+    else:
+        rates_data[key] = rate_data
 
     _write_json(RATES_FILE, rates_data)
 
@@ -329,8 +341,9 @@ def get_rate(base_currency: str, quote_currency: str) -> tuple[float, datetime]:
 
     if cached_rate is not None:
         rates_data = _read_json(RATES_FILE)
+        pairs = rates_data.get("pairs", rates_data)
         key = f"{base_currency}_{quote_currency}"
-        updated_at = str_to_datetime(rates_data[key]["updated_at"])
+        updated_at = str_to_datetime(pairs[key]["updated_at"])
         return cached_rate, updated_at
 
     if base_currency in EXCHANGE_RATES and quote_currency in EXCHANGE_RATES:

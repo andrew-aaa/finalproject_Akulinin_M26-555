@@ -11,6 +11,8 @@ from valutatrade_hub.core.exceptions import (
     InsufficientFundsError,
 )
 from valutatrade_hub.logging_config import setup_logging
+from valutatrade_hub.parser_service.storage import RatesStorage
+from valutatrade_hub.parser_service.updater import RatesUpdater
 
 HELP = """
 Доступные команды:
@@ -21,6 +23,8 @@ show-portfolio [--base <валюта>]
 buy --currency <валюта> --amount <количество>
 sell --currency <валюта> --amount <количество>
 get-rate --from <валюта> --to <валюта>
+update-rates [--source <coingecko|exchangerate>]
+show-rates [--currency <код>] [--top <число>] [--base <код>]
 help
 exit
 """
@@ -165,7 +169,7 @@ def _get_rate(arguments: dict[str, str]) -> None:
         f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')})"
     )
 
-    reverse_rate, _ = usecases.get_rate(to_currency, from_currency)
+    reverse_rate = 1 / rate
 
     print(
         f"Обратный курс "
@@ -173,6 +177,165 @@ def _get_rate(arguments: dict[str, str]) -> None:
         f"{from_currency.upper()}: "
         f"{reverse_rate:.8f}"
     )
+
+
+def _update_rates(arguments: dict[str, str]) -> None:
+    """Получает актуальные курсы через внешние API"""
+
+    source = arguments.get("source")
+    result = RatesUpdater().update(source=source)
+
+    print(f"Обновление завершено. Сохранено курсов: {result['updated']}")
+    print(f"Время обновления: {result['timestamp']}")
+
+    if result["errors"]:
+        print("Предупреждения:")
+        for error in result["errors"]:
+            print(f"- {error}")
+
+
+def _show_rates(arguments: dict[str, str]) -> None:
+    """Выводит актуальные курсы из локального кэша"""
+
+    storage = RatesStorage()
+    data = storage.get_rates()
+    pairs = data["pairs"]
+
+    if not pairs:
+        print(
+            "Локальный кеш курсов пуст. Выполните 'update-rates', чтобы загрузить данные"
+        )
+        return
+
+    base = arguments.get("base")
+    if base:
+        base = base.strip().upper()
+        if not base:
+            raise ValueError("Параметр --base не может быть пустым")
+
+    currency = arguments.get("currency")
+    if currency:
+        currency = currency.strip().upper()
+        if not currency:
+            raise ValueError("Параметр --currency не может быть пустым")
+
+    top = None
+    if "top" in arguments:
+        try:
+            top = int(arguments["top"])
+        except ValueError:
+            raise ValueError("Параметр --top должен быть целым числом")
+
+        if top <= 0:
+            raise ValueError("Параметр --top должен быть больше нуля")
+
+    filtered_pairs = {}
+
+    if base:
+        base_to_usd = None
+
+        if base == "USD":
+            base_to_usd = 1.0
+        else:
+            base_pair = pairs.get(f"{base}_USD")
+            if isinstance(base_pair, dict):
+                try:
+                    base_to_usd = float(base_pair["rate"])
+                except (KeyError, TypeError, ValueError):
+                    base_to_usd = None
+
+        if base_to_usd is None or base_to_usd <= 0:
+            print(f"Не удалось найти курс {base}_USD для пересчёта")
+            return
+
+        for pair, item in pairs.items():
+            if not isinstance(item, dict) or "rate" not in item:
+                continue
+
+            from_currency, separator, to_currency = pair.partition("_")
+            if not separator or to_currency != "USD":
+                continue
+
+            try:
+                rate = float(item["rate"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if rate <= 0:
+                continue
+
+            if currency and currency != from_currency:
+                continue
+
+            filtered_pairs[f"{from_currency}_{base}"] = {
+                **item,
+                "rate": rate / base_to_usd,
+            }
+    else:
+        for pair, item in pairs.items():
+            if not isinstance(item, dict) or "rate" not in item:
+                continue
+
+            from_currency, separator, to_currency = pair.partition("_")
+            if not separator:
+                continue
+
+            if (
+                top is not None
+                and currency
+                and currency not in (from_currency, to_currency)
+            ):
+                if from_currency not in ("BTC", "ETH", "SOL"):
+                    continue
+            elif (
+                top is None
+                and currency
+                and currency not in (from_currency, to_currency)
+            ):
+                continue
+
+            filtered_pairs[pair] = item
+
+    if currency and not filtered_pairs:
+        print(f"Курс для '{currency}' не найден в кеше")
+        return
+
+    if top is not None:
+        crypto_pairs = {
+            pair: item
+            for pair, item in filtered_pairs.items()
+            if pair.split("_", maxsplit=1)[0] in ("BTC", "ETH", "SOL")
+        }
+        filtered_pairs = dict(
+            sorted(
+                crypto_pairs.items(),
+                key=lambda entry: float(entry[1]["rate"]),
+                reverse=True,
+            )[:top]
+        )
+    else:
+        filtered_pairs = dict(sorted(filtered_pairs.items()))
+
+    if not filtered_pairs:
+        print("Подходящие курсы в кеше отсутствуют")
+        return
+
+    table = PrettyTable()
+    table.field_names = ["Пара", "Курс", "Источник", "Обновлено"]
+
+    for pair, item in filtered_pairs.items():
+        table.add_row(
+            [
+                pair,
+                f"{item['rate']:.8f}",
+                item.get("source", "unknown"),
+                item.get("updated_at", "неизвестно"),
+            ]
+        )
+
+    print("Курсы из локального кеша:")
+    print(table)
+    print(f"Последнее обновление кэша: {data.get('last_refresh') or 'нет данных'}")
 
 
 def execute(command: str, current_user=None):
@@ -235,6 +398,14 @@ def execute(command: str, current_user=None):
 
     if command_name == "get-rate":
         _get_rate(arguments)
+        return current_user
+
+    if command_name == "update-rates":
+        _update_rates(arguments)
+        return current_user
+
+    if command_name == "show-rates":
+        _show_rates(arguments)
         return current_user
 
     if command_name == "exit":
