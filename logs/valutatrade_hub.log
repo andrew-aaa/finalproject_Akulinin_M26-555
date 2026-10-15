@@ -64,3 +64,21 @@
 2026-10-14 19:42:01,767 - INFO - Начато обновление курсов
 2026-10-14 19:42:02,518 - INFO - Сохранено курсов: 6
 2026-10-14 19:42:02,519 - INFO - Сохранено курсов: 6
+2026-10-15 13:33:56,935 - INFO - timestamp=2026-10-15T10:33:56.893+00:00 action=REGISTER username=demouser currency_code=unknown amount=unknown rate=unknown base=unknown result=OK
+2026-10-15 13:34:05,880 - INFO - timestamp=2026-10-15T10:34:05.869+00:00 action=LOGIN username=demouser currency_code=unknown amount=unknown rate=unknown base=unknown result=ERROR error_type=ValueError error_message='Неверное имя пользователя или пароль'
+2026-10-15 13:34:08,906 - INFO - timestamp=2026-10-15T10:34:08.897+00:00 action=LOGIN username=demouser currency_code=unknown amount=unknown rate=unknown base=unknown result=OK
+2026-10-15 13:34:14,399 - INFO - timestamp=2026-10-15T10:34:14.399+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=USD result=OK
+2026-10-15 13:34:31,317 - INFO - timestamp=2026-10-15T10:34:31.316+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=USD result=OK
+2026-10-15 13:34:39,743 - INFO - timestamp=2026-10-15T10:34:39.690+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=EUR result=OK
+2026-10-15 13:34:47,591 - INFO - Начато обновление курсов
+2026-10-15 13:34:48,186 - INFO - Сохранено курсов: 6
+2026-10-15 13:34:48,187 - INFO - Сохранено курсов: 6
+2026-10-15 13:35:00,304 - INFO - timestamp=2026-10-15T10:35:00.287+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=BTC result=OK
+2026-10-15 13:35:00,321 - INFO - timestamp=2026-10-15T10:35:00.276+00:00 action=BUY username=demouser currency_code=BTC amount=0.01 rate=81043.0 base=USD result=OK function=buy_currency balance_before=0.0000 balance_after=0.0100
+2026-10-15 13:35:07,552 - INFO - timestamp=2026-10-15T10:35:07.532+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=BTC result=OK
+2026-10-15 13:35:07,567 - INFO - timestamp=2026-10-15T10:35:07.523+00:00 action=SELL username=demouser currency_code=BTC amount=0.005 rate=81043.0 base=USD result=OK function=sell_currency balance_before=0.0100 balance_after=0.0050
+2026-10-15 13:35:14,971 - INFO - timestamp=2026-10-15T10:35:14.971+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=USD result=OK
+2026-10-15 13:35:14,988 - INFO - timestamp=2026-10-15T10:35:14.972+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=BTC result=OK
+2026-10-15 13:35:25,630 - INFO - timestamp=2026-10-15T10:35:25.611+00:00 action=GET_RATE username=unknown currency_code=USD amount=unknown rate=unknown base=BTC result=OK
+2026-10-15 13:35:25,631 - INFO - timestamp=2026-10-15T10:35:25.599+00:00 action=BUY username=demouser currency_code=BTC amount=1000 rate=unknown base=unknown result=ERROR error_type=InsufficientFundsError error_message='Недостаточно средств: доступно 594.7850 USD, требуется 81043000.0000 USD' function=buy_currency
+2026-10-15 13:35:35,842 - INFO - timestamp=2026-10-15T10:35:35.842+00:00 action=GET_RATE username=unknown currency_code=XYZ amount=unknown rate=unknown base=ABC result=ERROR error_type=CurrencyNotFoundError error_message="Неизвестная валюта 'ABC'"

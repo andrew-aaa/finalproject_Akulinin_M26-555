@@ -11,6 +11,7 @@ from valutatrade_hub.core.exceptions import (
     InsufficientFundsError,
 )
 from valutatrade_hub.logging_config import setup_logging
+from valutatrade_hub.parser_service.config import ParserConfig
 from valutatrade_hub.parser_service.storage import RatesStorage
 from valutatrade_hub.parser_service.updater import RatesUpdater
 
@@ -61,6 +62,7 @@ def _require_login(current_user):
 
 def _show_portfolio(current_user, arguments: dict[str, str]) -> None:
     """Выводит портфель пользователя"""
+
     _require_login(current_user)
     base_currency = arguments.get("base", "USD")
     portfolio = usecases.show_portfolio(current_user, base_currency)
@@ -194,6 +196,94 @@ def _update_rates(arguments: dict[str, str]) -> None:
             print(f"- {error}")
 
 
+def _filter_and_convert_rates(
+    pairs: dict[str, dict],
+    base: str | None,
+    currency: str | None,
+    top: int | None,
+    crypto_currencies: tuple[str, ...],
+) -> dict[str, dict] | None:
+    """Фильтрует и пересчитывает пары курсов в соответствии с параметрами"""
+
+    filtered_pairs = {}
+    if base:
+        base_to_usd = 1.0 if base == "USD" else None
+        if base != "USD":
+            base_pair = pairs.get(f"{base}_USD")
+            if isinstance(base_pair, dict):
+                try:
+                    base_to_usd = float(base_pair["rate"])
+                except (KeyError, TypeError, ValueError):
+                    base_to_usd = None
+
+        if base_to_usd is None or base_to_usd <= 0:
+            print(f"Не удалось найти курс {base}_USD для пересчёта")
+            return None
+
+        for pair, item in pairs.items():
+            if not isinstance(item, dict) or "rate" not in item:
+                continue
+
+            from_currency, separator, to_currency = pair.partition("_")
+            if not separator or to_currency != "USD":
+                continue
+
+            try:
+                rate = float(item["rate"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if rate <= 0 or (currency and currency != from_currency):
+                continue
+
+            filtered_pairs[f"{from_currency}_{base}"] = {
+                **item,
+                "rate": rate / base_to_usd,
+            }
+    else:
+        for pair, item in pairs.items():
+            if not isinstance(item, dict) or "rate" not in item:
+                continue
+
+            from_currency, separator, to_currency = pair.partition("_")
+            if not separator:
+                continue
+
+            if (
+                top is not None
+                and currency
+                and currency not in (from_currency, to_currency)
+            ):
+                if from_currency not in crypto_currencies:
+                    continue
+            elif (
+                top is None
+                and currency
+                and currency not in (from_currency, to_currency)
+            ):
+                continue
+
+            filtered_pairs[pair] = item
+
+    if top is not None:
+        crypto_pairs = {
+            pair: item
+            for pair, item in filtered_pairs.items()
+            if pair.split("_", maxsplit=1)[0] in crypto_currencies
+        }
+        filtered_pairs = dict(
+            sorted(
+                crypto_pairs.items(),
+                key=lambda entry: float(entry[1]["rate"]),
+                reverse=True,
+            )[:top]
+        )
+    else:
+        filtered_pairs = dict(sorted(filtered_pairs.items()))
+
+    return filtered_pairs
+
+
 def _show_rates(arguments: dict[str, str]) -> None:
     """Выводит актуальные курсы из локального кэша"""
 
@@ -229,92 +319,21 @@ def _show_rates(arguments: dict[str, str]) -> None:
         if top <= 0:
             raise ValueError("Параметр --top должен быть больше нуля")
 
-    filtered_pairs = {}
+    config = ParserConfig()
+    filtered_pairs = _filter_and_convert_rates(
+        pairs=pairs,
+        base=base,
+        currency=currency,
+        top=top,
+        crypto_currencies=config.CRYPTO_CURRENCIES,
+    )
 
-    if base:
-        base_to_usd = None
-
-        if base == "USD":
-            base_to_usd = 1.0
-        else:
-            base_pair = pairs.get(f"{base}_USD")
-            if isinstance(base_pair, dict):
-                try:
-                    base_to_usd = float(base_pair["rate"])
-                except (KeyError, TypeError, ValueError):
-                    base_to_usd = None
-
-        if base_to_usd is None or base_to_usd <= 0:
-            print(f"Не удалось найти курс {base}_USD для пересчёта")
-            return
-
-        for pair, item in pairs.items():
-            if not isinstance(item, dict) or "rate" not in item:
-                continue
-
-            from_currency, separator, to_currency = pair.partition("_")
-            if not separator or to_currency != "USD":
-                continue
-
-            try:
-                rate = float(item["rate"])
-            except (KeyError, TypeError, ValueError):
-                continue
-
-            if rate <= 0:
-                continue
-
-            if currency and currency != from_currency:
-                continue
-
-            filtered_pairs[f"{from_currency}_{base}"] = {
-                **item,
-                "rate": rate / base_to_usd,
-            }
-    else:
-        for pair, item in pairs.items():
-            if not isinstance(item, dict) or "rate" not in item:
-                continue
-
-            from_currency, separator, to_currency = pair.partition("_")
-            if not separator:
-                continue
-
-            if (
-                top is not None
-                and currency
-                and currency not in (from_currency, to_currency)
-            ):
-                if from_currency not in ("BTC", "ETH", "SOL"):
-                    continue
-            elif (
-                top is None
-                and currency
-                and currency not in (from_currency, to_currency)
-            ):
-                continue
-
-            filtered_pairs[pair] = item
+    if filtered_pairs is None:
+        return
 
     if currency and not filtered_pairs:
         print(f"Курс для '{currency}' не найден в кеше")
         return
-
-    if top is not None:
-        crypto_pairs = {
-            pair: item
-            for pair, item in filtered_pairs.items()
-            if pair.split("_", maxsplit=1)[0] in ("BTC", "ETH", "SOL")
-        }
-        filtered_pairs = dict(
-            sorted(
-                crypto_pairs.items(),
-                key=lambda entry: float(entry[1]["rate"]),
-                reverse=True,
-            )[:top]
-        )
-    else:
-        filtered_pairs = dict(sorted(filtered_pairs.items()))
 
     if not filtered_pairs:
         print("Подходящие курсы в кеше отсутствуют")

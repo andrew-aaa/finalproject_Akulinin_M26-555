@@ -5,16 +5,20 @@ import os
 from datetime import UTC, datetime
 
 from valutatrade_hub.core.exceptions import InsufficientFundsError
+from valutatrade_hub.infra.settings import SettingsLoader
 
-EXCHANGE_RATES = {
-    "USD": 1.0,
-    "EUR": 1.08,
-    "GBP": 1.27,
-    "JPY": 0.0067,
-    "RUB": 0.01016,
-    "BTC": 59337.21,
-    "ETH": 3720.00,
-}
+EXCHANGE_RATES: dict[str, float] = SettingsLoader().get(
+    "fallback_exchange_rates",
+    {
+        "USD": 1.0,
+        "EUR": 1.08,
+        "GBP": 1.27,
+        "JPY": 0.0067,
+        "RUB": 0.01016,
+        "BTC": 59337.21,
+        "ETH": 3720.00,
+    },
+)
 
 
 class User:
@@ -36,6 +40,8 @@ class User:
 
     @staticmethod
     def _validate_user_id(value: int) -> None:
+        """Проверяет корректность ID пользователя"""
+
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError("user_id должен быть целым числом")
         if value <= 0:
@@ -43,6 +49,8 @@ class User:
 
     @staticmethod
     def _validate_username(value: str) -> None:
+        """Проверяет корректность имени пользователя"""
+
         if not isinstance(value, str):
             raise TypeError("Имя пользователя должно быть строкой")
         if not value.strip():
@@ -50,6 +58,8 @@ class User:
 
     @staticmethod
     def _validate_password(value: str) -> None:
+        """Проверяет корректность пароля"""
+
         if not isinstance(value, str):
             raise TypeError("Пароль должен быть строкой")
         if len(value) < 4:
@@ -57,11 +67,15 @@ class User:
 
     @staticmethod
     def _validate_datetime(value: datetime) -> None:
+        """Проверяет, что передан объект datetime"""
+
         if not isinstance(value, datetime):
             raise TypeError("registration_date должен быть объектом datetime")
 
     @staticmethod
     def _hash_password(password: str, salt: str) -> str:
+        """Хеширует пароль с использованием соли"""
+
         return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
 
     @property
@@ -137,6 +151,8 @@ class Wallet:
 
     @staticmethod
     def _validate_currency_code(value: str) -> None:
+        """Проверяет корректность кода валюты"""
+
         if not isinstance(value, str):
             raise TypeError("Код валюты должен быть строкой")
 
@@ -145,6 +161,8 @@ class Wallet:
 
     @staticmethod
     def _validate_amount(value: float) -> None:
+        """Проверяет корректность суммы транзакции"""
+
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("amount должен быть числом")
 
